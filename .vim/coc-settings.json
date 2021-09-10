@@ -1,0 +1,3 @@
+{
+  "rust-analyzer.checkOnSave.target": "x86_64-unknown-none-ponkankernel"
+}
