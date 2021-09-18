@@ -1,23 +1,34 @@
 use crate::graphics::{PixelWriter, PixelColor};
 
-const FONT_A: [u8; 16] = [
-    0b00000000,
-    0b00011000,
-    0b00011000,
-    0b00011000,
-    0b00011000,
-    0b00100100,
-    0b00100100,
-    0b00100100,
-    0b00100100,
-    0b01111110,
-    0b01000010,
-    0b01000010,
-    0b01000010,
-    0b11100111,
-    0b00000000,
-    0b00000000,
-];
+#[link(name="hankaku")]
+extern "C" {
+    static _binary_hankaku_bin_start: u8;
+    static _binary_hankaku_bin_end: u8;
+    static _binary_hankaku_bin_size: u8;
+}
+
+pub fn get_font(c: char) -> Option<&'static [u8]> {
+    const FONT_SIZE: usize = 16;
+
+    if !c.is_ascii() {
+        return None;
+    }
+    let ascii_code = c as u8;
+    let index = FONT_SIZE * (ascii_code as usize);
+
+    unsafe {
+        let font_list_size =
+            &_binary_hankaku_bin_size as *const u8 as usize;
+        if index >= font_list_size {
+            return None;
+        }
+
+        let font_list_start =
+            &_binary_hankaku_bin_start as *const u8;
+        Some(core::slice::from_raw_parts(
+                font_list_start.add(index), FONT_SIZE))
+    }
+}
 
 pub fn write_ascii(
     writer: &mut dyn PixelWriter,
@@ -26,15 +37,13 @@ pub fn write_ascii(
     c: char,
     color: &PixelColor
 ) {
-    if c != 'A' {
-        return;
-    }
-    for (dy, line) in FONT_A.iter().enumerate() {
-        for dx in 0..8 {
-            if (line << dx & 0x80u8) == 0x80u8 {
-                writer.write(x + dx, y + dy, color);
+    if let Some(font) = get_font(c) {
+        for (dy, line) in font.iter().enumerate() {
+            for dx in 0..8 {
+                if (line << dx & 0x80u8) == 0x80u8 {
+                    writer.write(x + dx, y + dy, color);
+                }
             }
         }
     }
 }
-

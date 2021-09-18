@@ -64,7 +64,8 @@ pub extern "C" fn kernel_main(
     }
     let black = PixelColor { r: 0, g: 0, b: 0 };
     write_ascii(pixel_writer, 50, 50, 'A', &black);
-    write_ascii(pixel_writer, 58, 50, 'A', &black);
+    write_ascii(pixel_writer, 58, 50, 'z', &black);
+    write_ascii(pixel_writer, 66, 50, '?', &black);
 
     loop {
         unsafe {
