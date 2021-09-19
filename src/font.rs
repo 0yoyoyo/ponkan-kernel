@@ -47,3 +47,16 @@ pub fn write_ascii(
         }
     }
 }
+
+pub fn write_string(
+    writer: &mut dyn PixelWriter,
+    x: usize,
+    y: usize,
+    s: &str,
+    color: &PixelColor
+) {
+    const FONT_WIDTH: usize = 8;
+    for (i, c) in s.chars().enumerate() {
+        write_ascii(writer, x + FONT_WIDTH * i, y, c, color);
+    }
+}
