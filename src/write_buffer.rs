@@ -35,7 +35,7 @@ impl<const N: usize> WriteBuffer<N> {
     pub fn as_str(&self) -> &str {
         unsafe {
             let s = core::slice::from_raw_parts(
-                &self.buf as *const u8, self.len);
+                self.buf.as_ptr(), self.len);
             core::str::from_utf8_unchecked(s)
         }
     }
