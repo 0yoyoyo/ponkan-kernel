@@ -7,17 +7,18 @@ mod graphics;
 mod font;
 mod frame_buffer_config;
 mod write_buffer;
+mod console;
 
 use graphics::{
     PixelColor, PixelWriter,
     RGBResv8BitPerColorPixelWriter,
     BGRResv8BitPerColorPixelWriter,
 };
-use font::{write_ascii, write_string};
 use frame_buffer_config::{
     PixelFormat, FrameBufferConfig
 };
 use write_buffer::WriteBuffer;
+use console::Console;
 
 use core::{fmt::Write, mem::MaybeUninit};
 
@@ -58,23 +59,16 @@ pub extern "C" fn kernel_main(
             pixel_writer.write(x, y, &white);
         }
     }
-    for x in 0..200 {
-        for y in 0..100 {
-            let green = PixelColor { r: 0, g: 255, b: 0 };
-            pixel_writer.write(x, y, &green);
-        }
-    }
 
-    let black = PixelColor { r: 0, g: 0, b: 0 };
-    write_ascii(pixel_writer, 50, 50, 'A', &black);
-    write_ascii(pixel_writer, 58, 50, 'z', &black);
-    write_ascii(pixel_writer, 66, 50, '?', &black);
-
-    let blue = PixelColor { r: 0, g: 0, b: 255 };
-    write_string(pixel_writer, 0, 66, "Hello, world!", &blue);
+    let fg_color = PixelColor { r: 0, g: 0, b: 0 };
+    let bg_color = PixelColor { r: 255, g: 255, b: 255 };
+    let mut console = Console::new(fg_color, bg_color, pixel_writer);
     let mut buf = WriteBuffer::<128>::new();
-    write!(buf, "1 + 2 = {}", 1 + 2).unwrap();
-    write_string(pixel_writer, 0, 82, buf, &blue);
+    for i in 0..30 {
+        writeln!(buf, "line {}", i).unwrap();
+        console.put_string(buf.as_str());
+        buf.clear();
+    }
 
     loop {
         unsafe {

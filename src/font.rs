@@ -7,14 +7,16 @@ extern "C" {
     static _binary_hankaku_bin_size: u8;
 }
 
-pub fn get_font(c: char) -> Option<&'static [u8]> {
-    const FONT_SIZE: usize = 16;
+pub const FONT_DATA_SIZE: usize = 16;
+pub const FONT_WIDTH: usize = 8;
+pub const FONT_HIGHT: usize = 16;
 
+pub fn get_font(c: char) -> Option<&'static [u8]> {
     if !c.is_ascii() {
         return None;
     }
     let ascii_code = c as u8;
-    let index = FONT_SIZE * (ascii_code as usize);
+    let index = FONT_DATA_SIZE * (ascii_code as usize);
 
     unsafe {
         let font_list_size =
@@ -26,7 +28,7 @@ pub fn get_font(c: char) -> Option<&'static [u8]> {
         let font_list_start =
             &_binary_hankaku_bin_start as *const u8;
         Some(core::slice::from_raw_parts(
-                font_list_start.add(index), FONT_SIZE))
+                font_list_start.add(index), FONT_DATA_SIZE))
     }
 }
 
@@ -55,7 +57,6 @@ pub fn write_string<A: AsRef<str>>(
     s: A,
     color: &PixelColor
 ) {
-    const FONT_WIDTH: usize = 8;
     for (i, c) in s.as_ref().chars().enumerate() {
         write_ascii(writer, x + FONT_WIDTH * i, y, c, color);
     }

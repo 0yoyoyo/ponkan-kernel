@@ -32,6 +32,11 @@ impl<const N: usize> WriteBuffer<N> {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.buf.fill(0);
+        self.len = 0;
+    }
+
     pub fn as_str(&self) -> &str {
         unsafe {
             let s = core::slice::from_raw_parts(
