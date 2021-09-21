@@ -48,15 +48,15 @@ pub fn write_ascii(
     }
 }
 
-pub fn write_string(
+pub fn write_string<A: AsRef<str>>(
     writer: &mut dyn PixelWriter,
     x: usize,
     y: usize,
-    s: &str,
+    s: A,
     color: &PixelColor
 ) {
     const FONT_WIDTH: usize = 8;
-    for (i, c) in s.chars().enumerate() {
+    for (i, c) in s.as_ref().chars().enumerate() {
         write_ascii(writer, x + FONT_WIDTH * i, y, c, color);
     }
 }

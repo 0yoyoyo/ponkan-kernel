@@ -74,7 +74,7 @@ pub extern "C" fn kernel_main(
     write_string(pixel_writer, 0, 66, "Hello, world!", &blue);
     let mut buf = WriteBuffer::<128>::new();
     write!(buf, "1 + 2 = {}", 1 + 2).unwrap();
-    write_string(pixel_writer, 0, 82, buf.as_str(), &blue);
+    write_string(pixel_writer, 0, 82, buf, &blue);
 
     loop {
         unsafe {

@@ -18,6 +18,12 @@ impl<const N: usize> fmt::Write for WriteBuffer<N> {
     }
 }
 
+impl<const N: usize> AsRef<str> for WriteBuffer<N> {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
 impl<const N: usize> WriteBuffer<N> {
     pub fn new() -> Self {
         Self {
