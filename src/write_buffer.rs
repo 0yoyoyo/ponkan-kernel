@@ -7,11 +7,8 @@ pub struct WriteBuffer<const N: usize> {
 
 impl<const N: usize> fmt::Write for WriteBuffer<N> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        for (i, c) in s.chars().enumerate() {
-            if !c.is_ascii() {
-                return Err(fmt::Error);
-            }
-            self.buf[self.len + i] = c as u8;
+        for (i, &byte) in s.as_bytes().iter().enumerate() {
+            self.buf[self.len + i] = byte;
         }
         self.len += s.len();
         if self.len > self.buf.len() {
