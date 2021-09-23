@@ -34,8 +34,8 @@ impl<'a> Console<'a> {
 }
 
 impl<'a> Console<'a> {
-    pub fn put_string(&mut self, s: &str) {
-        for c in s.chars() {
+    pub fn put_string<A: AsRef<str>>(&mut self, s: A) {
+        for c in s.as_ref().chars() {
             if c == '\n' {
                 self.new_line();
             } else if self.cursor_colum < COLUMS {

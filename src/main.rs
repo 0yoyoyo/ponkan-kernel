@@ -26,6 +26,29 @@ static mut BUF_RGB: MaybeUninit<RGBResv8BitPerColorPixelWriter> =
     MaybeUninit::uninit();
 static mut BUF_BGR: MaybeUninit<BGRResv8BitPerColorPixelWriter> =
     MaybeUninit::uninit();
+static mut BUF_CONSOLE: MaybeUninit<Console> = MaybeUninit::uninit();
+
+macro_rules! _kprint {
+    ($w:ident, $($arg:tt)*) => ({
+        let mut buf = WriteBuffer::<1024>::new();
+        $w!(buf, $($arg)*).unwrap();
+        let console = unsafe {
+            BUF_CONSOLE.assume_init_mut()
+        };
+        console.put_string(buf);
+    });
+}
+
+#[allow(unused_macros)]
+macro_rules! kprint {
+    ($($arg:tt)*) => (_kprint!(write, $($arg)*));
+}
+
+#[allow(unused_macros)]
+macro_rules! kprintln {
+    () => (_kprint!(write, "\n"));
+    ($($arg:tt)*) => (_kprint!(writeln, $($arg)*));
+}
 
 #[no_mangle]
 pub extern "C" fn kernel_main(
@@ -62,12 +85,12 @@ pub extern "C" fn kernel_main(
 
     let fg_color = PixelColor { r: 0, g: 0, b: 0 };
     let bg_color = PixelColor { r: 255, g: 255, b: 255 };
-    let mut console = Console::new(fg_color, bg_color, pixel_writer);
-    let mut buf = WriteBuffer::<128>::new();
+    unsafe {
+        BUF_CONSOLE.write(Console::new(fg_color, bg_color, pixel_writer));
+    }
+
     for i in 0..30 {
-        writeln!(buf, "line {}", i).unwrap();
-        console.put_string(buf.as_str());
-        buf.clear();
+        kprintln!("kprint: {}", i);
     }
 
     loop {

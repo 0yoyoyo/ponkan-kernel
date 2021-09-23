@@ -32,6 +32,7 @@ impl<const N: usize> WriteBuffer<N> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.buf.fill(0);
         self.len = 0;
