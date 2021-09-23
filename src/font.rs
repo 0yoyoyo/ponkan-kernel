@@ -9,7 +9,7 @@ extern "C" {
 
 pub const FONT_DATA_SIZE: usize = 16;
 pub const FONT_WIDTH: usize = 8;
-pub const FONT_HIGHT: usize = 16;
+pub const FONT_HEIGHT: usize = 16;
 
 pub fn get_font(c: char) -> Option<&'static [u8]> {
     if !c.is_ascii() {

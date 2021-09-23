@@ -1,5 +1,5 @@
 use crate::font::{
-    FONT_WIDTH, FONT_HIGHT,
+    FONT_WIDTH, FONT_HEIGHT,
     write_ascii, write_string
 };
 use crate::graphics::{PixelColor, PixelWriter};
@@ -42,7 +42,7 @@ impl<'a> Console<'a> {
                 write_ascii(
                     self.writer,
                     FONT_WIDTH * self.cursor_colum,
-                    FONT_HIGHT * self.cursor_row,
+                    FONT_HEIGHT * self.cursor_row,
                     c,
                     &self.fg_color,
                 );
@@ -57,7 +57,7 @@ impl<'a> Console<'a> {
         if self.cursor_row < ROWS - 1 {
             self.cursor_row += 1;
         } else {
-            for y in 0..(FONT_HIGHT * ROWS) {
+            for y in 0..(FONT_HEIGHT * ROWS) {
                 for x in 0..(FONT_WIDTH * COLUMS) {
                     self.writer.write(x, y, &self.bg_color);
                 }
@@ -72,7 +72,7 @@ impl<'a> Console<'a> {
                 write_string(
                     self.writer,
                     0,
-                    FONT_HIGHT * row,
+                    FONT_HEIGHT * row,
                     s,
                     &self.fg_color
                 );
