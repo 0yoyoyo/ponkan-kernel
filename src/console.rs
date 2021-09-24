@@ -5,12 +5,12 @@ use crate::font::{
 use crate::graphics::{PixelColor, PixelWriter};
 
 const ROWS: usize = 25;
-const COLUMS: usize = 80;
+const COLUMNS: usize = 80;
 
 pub struct Console<'a> {
-    buffer: [[u8; COLUMS]; ROWS],
+    buffer: [[u8; COLUMNS]; ROWS],
     cursor_row: usize,
-    cursor_colum: usize,
+    cursor_column: usize,
     fg_color: PixelColor,
     bg_color: PixelColor,
     writer: &'a mut dyn PixelWriter,
@@ -23,9 +23,9 @@ impl<'a> Console<'a> {
         writer: &'a mut dyn PixelWriter,
     ) -> Self {
         Console {
-            buffer: [[0; COLUMS]; ROWS],
+            buffer: [[0; COLUMNS]; ROWS],
             cursor_row: 0,
-            cursor_colum: 0,
+            cursor_column: 0,
             fg_color,
             bg_color,
             writer,
@@ -38,27 +38,27 @@ impl<'a> Console<'a> {
         for c in s.as_ref().chars() {
             if c == '\n' {
                 self.new_line();
-            } else if self.cursor_colum < COLUMS {
+            } else if self.cursor_column < COLUMNS {
                 write_ascii(
                     self.writer,
-                    FONT_WIDTH * self.cursor_colum,
+                    FONT_WIDTH * self.cursor_column,
                     FONT_HEIGHT * self.cursor_row,
                     c,
                     &self.fg_color,
                 );
-                self.buffer[self.cursor_row][self.cursor_colum] = c as u8;
-                self.cursor_colum += 1;
+                self.buffer[self.cursor_row][self.cursor_column] = c as u8;
+                self.cursor_column += 1;
             }
         }
     }
 
     fn new_line(&mut self) {
-        self.cursor_colum = 0;
+        self.cursor_column = 0;
         if self.cursor_row < ROWS - 1 {
             self.cursor_row += 1;
         } else {
             for y in 0..(FONT_HEIGHT * ROWS) {
-                for x in 0..(FONT_WIDTH * COLUMS) {
+                for x in 0..(FONT_WIDTH * COLUMNS) {
                     self.writer.write(x, y, &self.bg_color);
                 }
             }
