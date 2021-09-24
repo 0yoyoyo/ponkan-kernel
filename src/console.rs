@@ -4,6 +4,8 @@ use crate::font::{
 };
 use crate::graphics::{PixelColor, PixelWriter};
 
+use core::cell::RefCell;
+
 const ROWS: usize = 25;
 const COLUMNS: usize = 80;
 
@@ -13,14 +15,14 @@ pub struct Console<'a> {
     cursor_column: usize,
     fg_color: PixelColor,
     bg_color: PixelColor,
-    writer: &'a mut dyn PixelWriter,
+    writer: &'a RefCell<&'a mut dyn PixelWriter>,
 }
 
 impl<'a> Console<'a> {
     pub fn new(
         fg_color: PixelColor,
         bg_color: PixelColor,
-        writer: &'a mut dyn PixelWriter,
+        writer: &'a RefCell<&'a mut dyn PixelWriter>,
     ) -> Self {
         Console {
             buffer: [[0; COLUMNS]; ROWS],
@@ -59,7 +61,7 @@ impl<'a> Console<'a> {
         } else {
             for y in 0..(FONT_HEIGHT * ROWS) {
                 for x in 0..(FONT_WIDTH * COLUMNS) {
-                    self.writer.write(x, y, &self.bg_color);
+                    self.writer.borrow_mut().write(x, y, &self.bg_color);
                 }
             }
             for row in 0..(ROWS - 1) {

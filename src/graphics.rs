@@ -1,9 +1,23 @@
 use crate::frame_buffer_config::FrameBufferConfig;
 
+use core::{cell::RefCell, ops::AddAssign};
+
 pub struct PixelColor {
     pub r: u8,
     pub g: u8,
     pub b: u8,
+}
+
+pub struct Vector2D {
+    pub x: usize,
+    pub y: usize,
+}
+
+impl AddAssign for Vector2D {
+    fn add_assign(&mut self, rhs: Self) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+    }
 }
 
 pub trait PixelWriter {
@@ -50,5 +64,34 @@ impl<'a> PixelWriter for BGRResv8BitPerColorPixelWriter<'a> {
             );
             core::slice::from_raw_parts_mut(p, PIXEL_SIZE)
         }
+    }
+}
+
+pub fn fill_rectangle(
+    writer: &RefCell<&mut dyn PixelWriter>,
+    pos: &Vector2D,
+    size: &Vector2D,
+    color: &PixelColor,
+) {
+    for y in 0..size.y {
+        for x in 0..size.x {
+            writer.borrow_mut().write(pos.x + x, pos.y + y, color);
+        }
+    }
+}
+
+pub fn draw_rectangle(
+    writer: &RefCell<&mut dyn PixelWriter>,
+    pos: &Vector2D,
+    size: &Vector2D,
+    color: &PixelColor,
+) {
+    for x in 0..size.x {
+        writer.borrow_mut().write(pos.x + x, pos.y, color);
+        writer.borrow_mut().write(pos.x + x, pos.y + size.y - 1, color);
+    }
+    for y in 0..size.y {
+        writer.borrow_mut().write(pos.x, pos.y + y, color);
+        writer.borrow_mut().write(pos.x + size.x - 1, pos.y + y, color);
     }
 }

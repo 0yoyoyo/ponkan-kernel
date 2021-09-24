@@ -10,9 +10,10 @@ mod write_buffer;
 mod console;
 
 use graphics::{
-    PixelColor, PixelWriter,
+    PixelColor, PixelWriter, Vector2D,
     RGBResv8BitPerColorPixelWriter,
     BGRResv8BitPerColorPixelWriter,
+    fill_rectangle, draw_rectangle,
 };
 use frame_buffer_config::{
     PixelFormat, FrameBufferConfig
@@ -20,11 +21,42 @@ use frame_buffer_config::{
 use write_buffer::WriteBuffer;
 use console::Console;
 
-use core::{fmt::Write, mem::MaybeUninit};
+use core::{cell::RefCell, fmt::Write, mem::MaybeUninit};
+
+const MOUSE_CURSOR_WIDTH: usize = 15;
+const MOUSE_CURSOR_HEIGHT: usize = 24;
+const MOUSE_CURSOR_SHAPE: [[u8; MOUSE_CURSOR_WIDTH]; MOUSE_CURSOR_HEIGHT] = [
+    *b"@              ",
+    *b"@@             ",
+    *b"@.@            ",
+    *b"@..@           ",
+    *b"@...@          ",
+    *b"@....@         ",
+    *b"@.....@        ",
+    *b"@......@       ",
+    *b"@.......@      ",
+    *b"@........@     ",
+    *b"@.........@    ",
+    *b"@..........@   ",
+    *b"@...........@  ",
+    *b"@............@ ",
+    *b"@......@@@@@@@@",
+    *b"@......@       ",
+    *b"@....@@.@      ",
+    *b"@...@ @.@      ",
+    *b"@..@   @.@     ",
+    *b"@.@    @.@     ",
+    *b"@@      @.@    ",
+    *b"@       @.@    ",
+    *b"         @.@   ",
+    *b"         @@@   ",
+];
 
 static mut BUF_RGB: MaybeUninit<RGBResv8BitPerColorPixelWriter> =
     MaybeUninit::uninit();
 static mut BUF_BGR: MaybeUninit<BGRResv8BitPerColorPixelWriter> =
+    MaybeUninit::uninit();
+static mut BUF_WRITER: MaybeUninit<RefCell<&mut dyn PixelWriter>> =
     MaybeUninit::uninit();
 static mut BUF_CONSOLE: MaybeUninit<Console> = MaybeUninit::uninit();
 
@@ -54,8 +86,8 @@ macro_rules! kprintln {
 pub extern "C" fn kernel_main(
     frame_buffer_config: &'static mut FrameBufferConfig,
 ) -> ! {
-    let h_res = frame_buffer_config.horisontal_resolution as usize;
-    let v_res = frame_buffer_config.vertical_resolution as usize;
+    let frame_width = frame_buffer_config.horisontal_resolution as usize;
+    let frame_height = frame_buffer_config.vertical_resolution as usize;
 
     let pixel_writer: &mut dyn PixelWriter =
         match &frame_buffer_config.pixel_format
@@ -75,22 +107,55 @@ pub extern "C" fn kernel_main(
             }
         },
     };
+    let pixel_writer = unsafe {
+        BUF_WRITER.write(RefCell::new(pixel_writer));
+        BUF_WRITER.assume_init_ref()
+    };
 
-    for x in 0..h_res as usize {
-        for y in 0..v_res as usize {
-            let white = PixelColor { r: 255, g: 255, b: 255 };
-            pixel_writer.write(x, y, &white);
-        }
-    }
+    let desktop_bg_color = PixelColor { r: 45, g: 115, b: 200 };
+    let desktop_fg_color = PixelColor { r: 255, g: 255, b: 255 };
+    fill_rectangle(
+        pixel_writer,
+        &Vector2D { x: 0, y: 0 },
+        &Vector2D { x: frame_width, y: frame_height - 40 },
+        &desktop_bg_color,
+    );
+    fill_rectangle(
+        pixel_writer,
+        &Vector2D { x: 0, y: frame_height - 40 },
+        &Vector2D { x: frame_width, y: 40 },
+        &PixelColor { r: 10, g: 30, b: 50 },
+    );
+    fill_rectangle(
+        pixel_writer,
+        &Vector2D { x: 0, y: frame_height - 40 },
+        &Vector2D { x: frame_width / 4, y: 40 },
+        &PixelColor { r: 120, g: 120, b: 120 },
+    );
+    draw_rectangle(
+        pixel_writer,
+        &Vector2D { x: 10, y: frame_height - 30 },
+        &Vector2D { x: 20, y: 20 },
+        &PixelColor { r: 50, g: 160, b: 50 },
+    );
 
-    let fg_color = PixelColor { r: 0, g: 0, b: 0 };
-    let bg_color = PixelColor { r: 255, g: 255, b: 255 };
     unsafe {
-        BUF_CONSOLE.write(Console::new(fg_color, bg_color, pixel_writer));
+        BUF_CONSOLE.write(
+            Console::new(desktop_fg_color, desktop_bg_color, pixel_writer)
+        );
     }
+    kprintln!("Welcome to PonkanOS!");
 
-    for i in 0..30 {
-        kprintln!("kprint: {}", i);
+    for (y, &row) in MOUSE_CURSOR_SHAPE.iter().enumerate() {
+        for (x, &pixel) in row.iter().enumerate() {
+            if pixel == b'@' {
+                let black = PixelColor { r: 0, g: 0, b: 0 };
+                pixel_writer.borrow_mut().write(200 + x, 100 + y, &black);
+            } else if pixel == b'.' {
+                let white = PixelColor { r: 255, g: 255, b: 255 };
+                pixel_writer.borrow_mut().write(200 + x, 100 + y, &white);
+            }
+        }
     }
 
     loop {

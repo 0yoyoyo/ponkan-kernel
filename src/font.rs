@@ -1,5 +1,7 @@
 use crate::graphics::{PixelWriter, PixelColor};
 
+use core::cell::RefCell;
+
 #[link(name="hankaku")]
 extern "C" {
     static _binary_hankaku_bin_start: u8;
@@ -33,7 +35,7 @@ pub fn get_font(c: char) -> Option<&'static [u8]> {
 }
 
 pub fn write_ascii(
-    writer: &mut dyn PixelWriter,
+    writer: &RefCell<&mut dyn PixelWriter>,
     x: usize,
     y: usize,
     c: char,
@@ -43,7 +45,7 @@ pub fn write_ascii(
         for (dy, line) in font.iter().enumerate() {
             for dx in 0..8 {
                 if (line << dx & 0x80u8) == 0x80u8 {
-                    writer.write(x + dx, y + dy, color);
+                    writer.borrow_mut().write(x + dx, y + dy, color);
                 }
             }
         }
@@ -51,7 +53,7 @@ pub fn write_ascii(
 }
 
 pub fn write_string<A: AsRef<str>>(
-    writer: &mut dyn PixelWriter,
+    writer: &RefCell<&mut dyn PixelWriter>,
     x: usize,
     y: usize,
     s: A,
