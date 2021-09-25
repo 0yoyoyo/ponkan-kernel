@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(asm)]
+#![feature(global_asm)]
 
 mod panic;
 mod graphics;
@@ -8,6 +9,8 @@ mod font;
 mod frame_buffer_config;
 mod write_buffer;
 mod console;
+mod pci;
+mod asmfunc;
 
 use graphics::{
     PixelColor, PixelWriter, Vector2D,
@@ -20,6 +23,7 @@ use frame_buffer_config::{
 };
 use write_buffer::WriteBuffer;
 use console::Console;
+use pci::{BusScanner, read_class_code, read_vender_id};
 
 use core::{cell::RefCell, fmt::Write, mem::MaybeUninit};
 
@@ -156,6 +160,27 @@ pub extern "C" fn kernel_main(
                 pixel_writer.borrow_mut().write(200 + x, 100 + y, &white);
             }
         }
+    }
+
+    let mut scanner = BusScanner::new();
+    kprint!("scan_all_bus: ");
+    match scanner.scan_all_bus() {
+        Ok(_) => {
+            kprintln!("Success");
+        },
+        Err(err) => {
+            kprintln!("Error ({:?})", err);
+        },
+    }
+
+    for device in scanner.devices().iter().take(scanner.num_device()) {
+        let vender_id = read_vender_id(
+            device.bus, device.device, device.function);
+        let class_code = read_class_code(
+            device.bus, device.device, device.function);
+        kprintln!("{}.{}.{}: vender {:04x}, class {:06x}, header {:02x}",
+            device.bus, device.device, device.function,
+            vender_id, class_code, device.header_type);
     }
 
     loop {
