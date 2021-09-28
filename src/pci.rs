@@ -38,7 +38,7 @@ fn make_address(bus: u8, device: u8, function: u8, reg_addr: u8) -> u32 {
         | (reg_addr as u32 & 0xfc)
 }
 
-pub fn read_vender_id(bus: u8, device: u8, function: u8) -> u16 {
+pub fn read_vendor_id(bus: u8, device: u8, function: u8) -> u16 {
     write_address(make_address(bus, device, function, 0x00));
     (read_data() & 0x0000ffff) as u16
 }
@@ -117,7 +117,7 @@ impl BusScanner {
         }
 
         for function in 1..8 {
-            if read_vender_id(0, 0, function) == 0xffff {
+            if read_vendor_id(0, 0, function) == 0xffff {
                 continue;
             }
             self.scan_bus(function)?;
@@ -128,7 +128,7 @@ impl BusScanner {
 
     fn scan_bus(&mut self, bus: u8) -> Result<(), PciError> {
         for device in 0..32 {
-            if read_vender_id(bus, device, 0) == 0xffff {
+            if read_vendor_id(bus, device, 0) == 0xffff {
                 continue;
             }
             self.scan_device(bus, device)?;
@@ -145,7 +145,7 @@ impl BusScanner {
         }
 
         for function in 1..8 {
-            if read_vender_id(bus, device, function) == 0xffff {
+            if read_vendor_id(bus, device, function) == 0xffff {
                 continue;
             }
             self.scan_function(bus, device, function)?;

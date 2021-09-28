@@ -23,7 +23,7 @@ use frame_buffer_config::{
 };
 use write_buffer::WriteBuffer;
 use console::Console;
-use pci::{BusScanner, read_class_code, read_vender_id};
+use pci::{BusScanner, read_class_code, read_vendor_id};
 
 use core::{cell::RefCell, fmt::Write, mem::MaybeUninit};
 
@@ -174,13 +174,13 @@ pub extern "C" fn kernel_main(
     }
 
     for device in scanner.devices().iter().take(scanner.num_device()) {
-        let vender_id = read_vender_id(
+        let vendor_id = read_vendor_id(
             device.bus, device.device, device.function);
         let class_code = read_class_code(
             device.bus, device.device, device.function);
-        kprintln!("{}.{}.{}: vender {:04x}, class {:06x}, header {:02x}",
+        kprintln!("{}.{}.{}: vendor {:04x}, class {:06x}, header {:02x}",
             device.bus, device.device, device.function,
-            vender_id, class_code, device.header_type);
+            vendor_id, class_code, device.header_type);
     }
 
     loop {
