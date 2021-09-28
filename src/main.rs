@@ -178,7 +178,7 @@ pub extern "C" fn kernel_main(
             device.bus, device.device, device.function);
         let class_code = read_class_code(
             device.bus, device.device, device.function);
-        kprintln!("{}.{}.{}: vendor {:04x}, class {:06x}, header {:02x}",
+        kprintln!("{}.{}.{}: vendor {:04x}, class {:08x}, header {:02x}",
             device.bus, device.device, device.function,
             vendor_id, class_code, device.header_type);
     }
