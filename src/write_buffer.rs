@@ -7,13 +7,13 @@ pub struct WriteBuffer<const N: usize> {
 
 impl<const N: usize> fmt::Write for WriteBuffer<N> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
+        if self.len + s.len() > self.buf.len() {
+            return Err(fmt::Error);
+        }
         for (i, &byte) in s.as_bytes().iter().enumerate() {
             self.buf[self.len + i] = byte;
         }
         self.len += s.len();
-        if self.len > self.buf.len() {
-            return Err(fmt::Error);
-        }
         Ok(())
     }
 }
@@ -39,10 +39,7 @@ impl<const N: usize> WriteBuffer<N> {
     }
 
     pub fn as_str(&self) -> &str {
-        unsafe {
-            let s = core::slice::from_raw_parts(
-                self.buf.as_ptr(), self.len);
-            core::str::from_utf8_unchecked(s)
-        }
+        let s = &self.buf[..self.len];
+        core::str::from_utf8(s).unwrap()
     }
 }
