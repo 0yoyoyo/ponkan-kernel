@@ -25,6 +25,7 @@ impl<const N: usize> AsRef<str> for WriteBuffer<N> {
 }
 
 impl<const N: usize> WriteBuffer<N> {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             buf: [0; N],

@@ -11,6 +11,8 @@ mod write_buffer;
 mod console;
 mod pci;
 mod asmfunc;
+mod logger;
+mod error;
 
 use graphics::{
     PixelColor, PixelWriter, Vector2D,
@@ -21,9 +23,13 @@ use graphics::{
 use frame_buffer_config::{
     PixelFormat, FrameBufferConfig
 };
-use write_buffer::WriteBuffer;
+pub use write_buffer::WriteBuffer;
 use console::Console;
-use pci::{BusScanner, read_class_code, read_vendor_id};
+use pci::{
+    BusScanner, read_bar, read_class_code,
+    read_vendor_id, read_vendor_id_from_device
+};
+use logger::*;
 
 use core::{cell::RefCell, fmt::Write, mem::MaybeUninit};
 
@@ -62,7 +68,7 @@ static mut BUF_BGR: MaybeUninit<BGRResv8BitPerColorPixelWriter> =
     MaybeUninit::uninit();
 static mut BUF_WRITER: MaybeUninit<RefCell<&mut dyn PixelWriter>> =
     MaybeUninit::uninit();
-static mut BUF_CONSOLE: MaybeUninit<Console> = MaybeUninit::uninit();
+pub static mut BUF_CONSOLE: MaybeUninit<Console> = MaybeUninit::uninit();
 
 macro_rules! _kprint {
     ($w:ident, $($arg:tt)*) => ({
@@ -149,6 +155,7 @@ pub extern "C" fn kernel_main(
         );
     }
     kprintln!("Welcome to PonkanOS!");
+    set_log_level(Warn);
 
     for (y, &row) in MOUSE_CURSOR_SHAPE.iter().enumerate() {
         for (x, &pixel) in row.iter().enumerate() {
@@ -163,13 +170,12 @@ pub extern "C" fn kernel_main(
     }
 
     let mut scanner = BusScanner::new();
-    kprint!("scan_all_bus: ");
     match scanner.scan_all_bus() {
         Ok(_) => {
-            kprintln!("Success");
+            log!(Debug, "scan_all_bus: Success");
         },
         Err(err) => {
-            kprintln!("Error ({:?})", err);
+            log!(Debug, "scan_all_bus: Error ({:?})", err.code);
         },
     }
 
@@ -178,9 +184,35 @@ pub extern "C" fn kernel_main(
             device.bus, device.device, device.function);
         let class_code = read_class_code(
             device.bus, device.device, device.function);
-        kprintln!("{}.{}.{}: vendor {:04x}, class {:08x}, header {:02x}",
+        log!(Debug, "{}.{}.{}: vendor {:04x}, class {:08x}, header {:02x}",
             device.bus, device.device, device.function,
             vendor_id, class_code, device.header_type);
+    }
+
+    let mut xhc_device = None;
+    for device in scanner.devices().iter().take(scanner.num_device()) {
+        if device.class_code.is_matched(0x0c, 0x03, 0x30) {
+            xhc_device = Some(device);
+
+            if read_vendor_id_from_device(device) == 0x8086 {
+                break;
+            }
+        }
+    }
+
+    if let Some(device) = xhc_device {
+        log!(Info, "xHC has been found: {}.{}.{}",
+            device.bus, device.device, device.function);
+
+        match read_bar(device, 0) {
+            Ok(bar) => {
+                let xhc_mmio_base = bar & !0xf;
+                log!(Debug, "xHC mmio_base = {:08x}", xhc_mmio_base);
+            },
+            Err(err) => {
+                log!(Debug, "read_bar: Error ({:?})", err.code);
+            },
+        }
     }
 
     loop {

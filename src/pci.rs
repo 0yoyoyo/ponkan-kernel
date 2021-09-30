@@ -1,5 +1,9 @@
 #![allow(dead_code)]
 
+use crate::error::*;
+
+use core::fmt;
+
 const CONFIG_ADDRESS: u16 = 0x0cf8;
 const CONFIG_DATA: u16 = 0x0cfc;
 
@@ -53,9 +57,13 @@ pub fn read_header_type(bus: u8, device: u8, function: u8) -> u8 {
     ((read_data() >> 16) & 0x000000ff) as u8
 }
 
-pub fn read_class_code(bus: u8, device: u8, function: u8) -> u32 {
+pub fn read_class_code(bus: u8, device: u8, function: u8) -> ClassCode {
     write_address(make_address(bus, device, function, 0x08));
-    read_data()
+    let data = read_data();
+    let base = ((data >> 24) & 0x000000ff) as u8;
+    let sub = ((data >> 16) & 0x000000ff) as u8;
+    let interface = ((data >> 8) & 0x000000ff) as u8;
+    ClassCode { base, sub, interface }
 }
 
 pub fn read_bus_numbers(bus: u8, device: u8, function: u8) -> u32 {
@@ -63,14 +71,88 @@ pub fn read_bus_numbers(bus: u8, device: u8, function: u8) -> u32 {
     read_data()
 }
 
+pub fn read_conf_reg(bus: u8, device: u8, function: u8, reg_addr: u8) -> u32 {
+    write_address(make_address(bus, device, function, reg_addr));
+    read_data()
+}
+
+pub fn write_conf_reg(bus: u8, device: u8, function: u8, reg_addr: u8, value: u32) {
+    write_address(make_address(bus, device, function, reg_addr));
+    write_data(value);
+}
+
 pub fn is_single_function_device(header_type: u8) -> bool {
     header_type & 0x80 == 0x00
 }
 
-#[derive(Debug)]
-pub enum PciError {
-    Full,
-    Empty,
+pub fn read_vendor_id_from_device(device: &Device) -> u16 {
+    read_vendor_id(device.bus, device.device, device.function)
+}
+
+pub fn read_conf_reg_from_device(device: &Device, reg_addr: u8) -> u32 {
+    read_conf_reg(device.bus, device.device, device.function, reg_addr)
+}
+
+pub fn write_conf_reg_from_device(device: &Device, reg_addr: u8, value: u32) {
+    write_conf_reg(device.bus, device.device, device.function, reg_addr, value);
+}
+
+const fn calc_bar_address(bar_index: usize) -> u8 {
+    0x10 + 4 * (bar_index as u8)
+}
+
+pub fn read_bar(device: &Device, bar_index: usize) -> Result<u64, PciError> {
+    if bar_index >= 6 {
+        return make_error!(PciErrorCode::IndexOutOfRange);
+    }
+
+    let addr = calc_bar_address(bar_index);
+    let bar_lower = read_conf_reg(
+        device.bus, device.device, device.function, addr) as u64;
+
+    // 32 bit address
+    if (bar_lower & 0x4) == 0x0 {
+        return Ok(bar_lower);
+    }
+
+    // 64 bit address
+    if bar_index >= 5 {
+        return make_error!(PciErrorCode::IndexOutOfRange);
+    }
+
+    let bar_upper = read_conf_reg(
+        device.bus, device.device, device.function, addr + 4) as u64;
+    let bar = bar_lower | (bar_upper << 32);
+    Ok(bar)
+}
+
+#[derive(Clone, Copy)]
+pub struct ClassCode {
+    base: u8,
+    sub: u8,
+    interface: u8,
+}
+
+impl fmt::LowerHex for ClassCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:02x}{:02x}{:02x}XX",
+            self.base, self.sub, self.interface)
+    }
+}
+
+impl ClassCode {
+    pub fn is_matched(&self, base: u8, sub: u8, interface: u8) -> bool {
+        self.is_matched_base_and_sub(base, sub) &&
+            self.interface == interface
+    }
+
+    pub fn is_matched_base_and_sub(&self, base: u8, sub: u8) -> bool {
+        self.is_matched_base(base) && self.sub == sub
+    }
+
+    pub fn is_matched_base(&self, base: u8) -> bool {
+        self.base == base
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -79,6 +161,7 @@ pub struct Device {
     pub device: u8,
     pub function: u8,
     pub header_type: u8,
+    pub class_code: ClassCode,
 }
 
 pub struct BusScanner {
@@ -88,11 +171,17 @@ pub struct BusScanner {
 
 impl BusScanner {
     pub fn new() -> Self {
+        let empty_class_code = ClassCode {
+            base: 0,
+            sub: 0,
+            interface: 0,
+        };
         let empty_device = Device {
             bus: 0,
             device: 0,
             function: 0,
             header_type: 0,
+            class_code: empty_class_code,
         };
         Self {
             devices: [empty_device; 32],
@@ -161,13 +250,11 @@ impl BusScanner {
         function: u8,
     ) -> Result<(), PciError> {
         let header_type = read_header_type(bus, device, function);
-        self.add_device(bus, device, function, header_type)?;
-
         let class_code = read_class_code(bus, device, function);
-        let base = ((class_code >> 24) & 0x000000ff) as u8;
-        let sub = ((class_code >> 16) & 0x000000ff) as u8;
 
-        if base == 0x06 && sub == 0x04 {
+        self.add_device(bus, device, function, header_type, class_code)?;
+
+        if class_code.is_matched_base_and_sub(0x06, 0x04) {
             let bus_numbers = read_bus_numbers(bus, device, function);
             let secondary_bus = ((bus_numbers >> 8) & 0x000000ff) as u8;
             return self.scan_bus(secondary_bus);
@@ -182,9 +269,10 @@ impl BusScanner {
         device: u8,
         function: u8,
         header_type: u8,
+        class_code: ClassCode,
     ) -> Result<(), PciError> {
         if self.num_device == self.devices.len() {
-            return Err(PciError::Full);
+            return make_error!(PciErrorCode::Full);
         }
 
         self.devices[self.num_device] = Device {
@@ -192,6 +280,7 @@ impl BusScanner {
             device,
             function,
             header_type,
+            class_code,
         };
         self.num_device += 1;
 
