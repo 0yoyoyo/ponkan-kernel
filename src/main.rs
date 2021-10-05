@@ -13,11 +13,12 @@ mod pci;
 mod asmfunc;
 mod logger;
 mod error;
+mod usb;
+mod mouse;
 
 use graphics::{
-    PixelColor, PixelWriter, Vector2D,
-    RGBResv8BitPerColorPixelWriter,
-    BGRResv8BitPerColorPixelWriter,
+    PixelColor, PixelWriter, Vector2D, Displacement,
+    RGBResv8BitPerColorPixelWriter, BGRResv8BitPerColorPixelWriter,
     fill_rectangle, draw_rectangle,
 };
 use frame_buffer_config::{
@@ -26,41 +27,18 @@ use frame_buffer_config::{
 pub use write_buffer::WriteBuffer;
 use console::Console;
 use pci::{
-    BusScanner, read_bar, read_class_code,
+    BusScanner, Device, read_bar, read_class_code,
+    read_conf_reg_from_device, write_conf_reg_from_device,
     read_vendor_id, read_vendor_id_from_device
 };
 use logger::*;
+use usb::{
+    XhciController, configure_port, process_event,
+    set_default_mouse_observer,
+};
+use mouse::MouseCursor;
 
 use core::{cell::RefCell, fmt::Write, mem::MaybeUninit};
-
-const MOUSE_CURSOR_WIDTH: usize = 15;
-const MOUSE_CURSOR_HEIGHT: usize = 24;
-const MOUSE_CURSOR_SHAPE: [[u8; MOUSE_CURSOR_WIDTH]; MOUSE_CURSOR_HEIGHT] = [
-    *b"@              ",
-    *b"@@             ",
-    *b"@.@            ",
-    *b"@..@           ",
-    *b"@...@          ",
-    *b"@....@         ",
-    *b"@.....@        ",
-    *b"@......@       ",
-    *b"@.......@      ",
-    *b"@........@     ",
-    *b"@.........@    ",
-    *b"@..........@   ",
-    *b"@...........@  ",
-    *b"@............@ ",
-    *b"@......@@@@@@@@",
-    *b"@......@       ",
-    *b"@....@@.@      ",
-    *b"@...@ @.@      ",
-    *b"@..@   @.@     ",
-    *b"@.@    @.@     ",
-    *b"@@      @.@    ",
-    *b"@       @.@    ",
-    *b"         @.@   ",
-    *b"         @@@   ",
-];
 
 static mut BUF_RGB: MaybeUninit<RGBResv8BitPerColorPixelWriter> =
     MaybeUninit::uninit();
@@ -69,6 +47,7 @@ static mut BUF_BGR: MaybeUninit<BGRResv8BitPerColorPixelWriter> =
 static mut BUF_WRITER: MaybeUninit<RefCell<&mut dyn PixelWriter>> =
     MaybeUninit::uninit();
 pub static mut BUF_CONSOLE: MaybeUninit<Console> = MaybeUninit::uninit();
+static mut BUF_MOUSE: MaybeUninit<MouseCursor> = MaybeUninit::uninit();
 
 macro_rules! _kprint {
     ($w:ident, $($arg:tt)*) => ({
@@ -90,6 +69,40 @@ macro_rules! kprint {
 macro_rules! kprintln {
     () => (_kprint!(write, "\n"));
     ($($arg:tt)*) => (_kprint!(writeln, $($arg)*));
+}
+
+extern "C" fn mouse_observer(displacement_x: i8, displacement_y: i8) {
+    let displacement = Displacement {
+        x: displacement_x as isize,
+        y: displacement_y as isize,
+    };
+    let mouse_cursor = unsafe {
+        BUF_MOUSE.assume_init_mut()
+    };
+    mouse_cursor.move_relative(displacement);
+}
+
+impl BusScanner {
+    fn switch_ehci_to_xhci(&self, xhc_device: &Device) {
+        let mut intel_ehc_exist = false;
+        for device in self.devices() {
+            if device.class_code.is_matched(0x0c, 0x03, 0x20) &&
+                read_vendor_id_from_device(device) == 0x8086 {
+                intel_ehc_exist = true;
+                break;
+            }
+        }
+        if !intel_ehc_exist {
+            return;
+        }
+
+        let superspeed_port = read_conf_reg_from_device(xhc_device, 0xdc);
+        write_conf_reg_from_device(xhc_device, 0xd8, superspeed_port);
+        let ehci_to_xhci_port = read_conf_reg_from_device(xhc_device, 0xd4);
+        write_conf_reg_from_device(xhc_device, 0xd0, ehci_to_xhci_port);
+        log!(Debug, "switch_ehci_to_xhci: SS = {:02x}, xHCI = {:02x}",
+             superspeed_port, ehci_to_xhci_port);
+    }
 }
 
 #[no_mangle]
@@ -157,16 +170,14 @@ pub extern "C" fn kernel_main(
     kprintln!("Welcome to PonkanOS!");
     set_log_level(Warn);
 
-    for (y, &row) in MOUSE_CURSOR_SHAPE.iter().enumerate() {
-        for (x, &pixel) in row.iter().enumerate() {
-            if pixel == b'@' {
-                let black = PixelColor { r: 0, g: 0, b: 0 };
-                pixel_writer.borrow_mut().write(200 + x, 100 + y, &black);
-            } else if pixel == b'.' {
-                let white = PixelColor { r: 255, g: 255, b: 255 };
-                pixel_writer.borrow_mut().write(200 + x, 100 + y, &white);
-            }
-        }
+    let initial_position = Vector2D {
+        x: 300,
+        y: 200,
+    };
+    unsafe {
+        BUF_MOUSE.write(
+            MouseCursor::new(pixel_writer, desktop_bg_color, initial_position)
+        );
     }
 
     let mut scanner = BusScanner::new();
@@ -208,6 +219,38 @@ pub extern "C" fn kernel_main(
             Ok(bar) => {
                 let xhc_mmio_base = bar & !0xf;
                 log!(Debug, "xHC mmio_base = {:08x}", xhc_mmio_base);
+
+                let mut xhc = XhciController::new(xhc_mmio_base);
+
+                if read_vendor_id_from_device(device) == 0x8086 {
+                    scanner.switch_ehci_to_xhci(device);
+                }
+
+                let err_code = xhc.initialize();
+                log!(Debug, "xhc.initialize: {}", err_code);
+
+                log!(Info, "xHC starting");
+                xhc.run();
+
+                set_default_mouse_observer(mouse_observer);
+
+                for i in 0..xhc.max_ports() {
+                    let mut port = xhc.port_at(i);
+                    log!(Debug, "Port {}: is_connected={}",
+                         i, port.is_connected());
+
+                    if port.is_connected() &&
+                        configure_port(&mut xhc, &mut port) != 0 {
+                        log!(Error, "Failed to configure port");
+                        continue;
+                    }
+                }
+
+                loop {
+                    if process_event(&mut xhc) != 0 {
+                        log!(Error, "Error while process_event");
+                    }
+                }
             },
             Err(err) => {
                 log!(Debug, "read_bar: Error ({:?})", err.code);

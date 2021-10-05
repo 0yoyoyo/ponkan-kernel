@@ -1,7 +1,8 @@
 use crate::frame_buffer_config::FrameBufferConfig;
 
-use core::{cell::RefCell, ops::AddAssign};
+use core::cell::RefCell;
 
+#[derive(Clone, Copy)]
 pub struct PixelColor {
     pub r: u8,
     pub g: u8,
@@ -13,10 +14,23 @@ pub struct Vector2D {
     pub y: usize,
 }
 
-impl AddAssign for Vector2D {
-    fn add_assign(&mut self, rhs: Self) {
-        self.x += rhs.x;
-        self.y += rhs.y;
+pub struct Displacement {
+    pub x: isize,
+    pub y: isize,
+}
+
+impl Vector2D {
+    pub fn displace(&mut self, displacement: &Displacement) {
+        self.x = if displacement.x >= 0 {
+            self.x.saturating_add(displacement.x.abs() as usize)
+        } else {
+            self.x.saturating_sub(displacement.x.abs() as usize)
+        };
+        self.y = if displacement.y >= 0 {
+            self.y.saturating_add(displacement.y.abs() as usize)
+        } else {
+            self.y.saturating_sub(displacement.y.abs() as usize)
+        };
     }
 }
 
