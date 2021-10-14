@@ -120,11 +120,11 @@ impl BusScanner {
 extern "x86-interrupt" fn interrupt_handler_xhci(
     _stack_frame: ExceptionStackFrame,
 ) {
-    let mut xhc = unsafe {
+    let xhc = unsafe {
         BUF_XHC.assume_init_mut()
     };
     while xhc.primary_event_ring().has_front() {
-        if process_event(&mut xhc) != 0 {
+        if process_event(xhc) != 0 {
             log!(Error, "Error while process_event");
         }
     }
@@ -274,7 +274,7 @@ pub extern "C" fn kernel_main(
                 let xhc_mmio_base = bar & !0xf;
                 log!(Debug, "xHC mmio_base = {:08x}", xhc_mmio_base);
 
-                let mut xhc = unsafe {
+                let xhc = unsafe {
                     BUF_XHC.write(XhciController::new(xhc_mmio_base));
                     BUF_XHC.assume_init_mut()
                 };
@@ -301,7 +301,7 @@ pub extern "C" fn kernel_main(
                          i, port.is_connected());
 
                     if port.is_connected() &&
-                        configure_port(&mut xhc, &mut port) != 0 {
+                        configure_port(xhc, &mut port) != 0 {
                         log!(Error, "Failed to configure port");
                         continue;
                     }
