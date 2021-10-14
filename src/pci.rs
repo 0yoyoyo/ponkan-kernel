@@ -287,3 +287,236 @@ impl BusScanner {
         Ok(())
     }
 }
+
+#[derive(PartialEq, Eq)]
+pub enum MsiTriggerMode {
+    Edge  = 0,
+    Level = 1,
+}
+
+pub enum MsiDeliveryMode {
+    Fixed          = 0b000,
+    LowestPriority = 0b001,
+    Smi            = 0b010,
+    Nmi            = 0b100,
+    Init           = 0b101,
+    ExtInt         = 0b111,
+}
+
+#[derive(Clone, Copy)]
+#[repr(C, packed)]
+struct CapabilityHeaderFields {
+    cap_id: u8,
+    next_ptr: u8,
+    cap: u16,
+}
+
+union CapabilityHeader {
+    data: u32,
+    fields: CapabilityHeaderFields,
+}
+
+#[derive(Clone, Copy)]
+#[repr(C, packed)]
+struct MsiCapabilityHeaderFields {
+    cap_id: u8,
+    next_ptr: u8,
+    others: u16,
+}
+
+union MsiCapabilityHeader {
+    data: u32,
+    fields: MsiCapabilityHeaderFields,
+}
+
+#[repr(C, packed)]
+struct MsiCapability {
+    header: MsiCapabilityHeader,
+    msg_addr: u32,
+    msg_upper_addr: u32,
+    msg_data: u32,
+    mask_bits: u32,
+    pending_bits: u32,
+}
+
+const CAPABILITY_MSI: u8 = 0x05;
+const CAPABILITY_MSIX: u8 = 0x11;
+
+fn read_msi_capability(device: &Device, cap_addr: u8) -> MsiCapability {
+    let header = MsiCapabilityHeader {
+        data: read_conf_reg_from_device(device, cap_addr),
+    };
+    let msg_addr = read_conf_reg_from_device(device, cap_addr + 4);
+
+    let mut msg_data_addr = cap_addr + 8;
+    let mut msg_upper_addr = 0;
+    unsafe {
+        let addr_64_capable =
+            (header.fields.others >> 7) & 0b0000_0000_0000_0001;
+        if addr_64_capable != 0 {
+            msg_upper_addr = read_conf_reg_from_device(device, cap_addr + 8);
+            msg_data_addr = cap_addr + 12;
+        }
+    }
+
+    let msg_data = read_conf_reg_from_device(device, msg_data_addr);
+
+    let mut mask_bits = 0;
+    let mut pending_bits = 0;
+    unsafe {
+        let per_vector_mask_capable =
+            (header.fields.others >> 8) & 0b0000_0000_0000_0001;
+        if per_vector_mask_capable != 0 {
+            mask_bits = read_conf_reg_from_device(device, msg_data_addr + 4);
+            pending_bits = read_conf_reg_from_device(device, msg_data_addr + 8);
+        }
+    }
+
+    MsiCapability {
+        header,
+        msg_addr,
+        msg_upper_addr,
+        msg_data,
+        mask_bits,
+        pending_bits,
+    }
+}
+
+fn write_msi_capability(
+    device: &Device,
+    cap_addr: u8,
+    msi_cap: &MsiCapability
+) {
+    unsafe {
+        write_conf_reg_from_device(device, cap_addr, msi_cap.header.data);
+    }
+    write_conf_reg_from_device(device, cap_addr + 4, msi_cap.msg_addr);
+
+    let mut msg_data_addr = cap_addr + 8;
+    unsafe {
+        let addr_64_capable =
+            (msi_cap.header.fields.others >> 7) & 0b0000_0000_0000_0001;
+        if addr_64_capable != 0 {
+            write_conf_reg_from_device(
+                device,
+                cap_addr + 8,
+                msi_cap.msg_upper_addr,
+            );
+            msg_data_addr = cap_addr + 12;
+        }
+    }
+
+    write_conf_reg_from_device(device, msg_data_addr, msi_cap.msg_data);
+
+    unsafe {
+        let per_vector_mask_capable =
+            (msi_cap.header.fields.others >> 8) & 0b0000_0000_0000_0001;
+        if per_vector_mask_capable != 0 {
+            write_conf_reg_from_device(
+                device,
+                msg_data_addr + 4,
+                msi_cap.mask_bits,
+            );
+            write_conf_reg_from_device(
+                device,
+                msg_data_addr + 8,
+                msi_cap.pending_bits,
+            );
+        }
+    }
+}
+
+fn configure_msi_register(
+    device: &Device,
+    cap_addr: u8,
+    msg_addr: u32,
+    msg_data: u32,
+    num_vector_exponent: usize,
+) -> Result<(), PciError> {
+    let mut msi_cap = read_msi_capability(device, cap_addr);
+
+    unsafe {
+        let multi_msg_capable =
+            (msi_cap.header.fields.others >> 1) & 0b0000_0000_0000_0111;
+        if (multi_msg_capable as usize) <= num_vector_exponent {
+            msi_cap.header.fields.others |=
+                (multi_msg_capable << 4) & 0b0000_0000_0111_0000;
+        } else {
+            msi_cap.header.fields.others |=
+                ((num_vector_exponent as u16) << 4) & 0b0000_0000_0111_0000;
+        }
+        msi_cap.header.fields.others |= 0b0000_0000_0000_0001;
+    }
+
+    msi_cap.msg_addr = msg_addr;
+    msi_cap.msg_data = msg_data;
+
+    write_msi_capability(device, cap_addr, &msi_cap);
+    Ok(())
+}
+
+fn configure_msix_register(
+    _device: &Device,
+    _cap_addr: u8,
+    _msg_addr: u32,
+    _msg_data: u32,
+    _num_vector_exponent: usize,
+) -> Result<(), PciError> {
+    make_error!(PciErrorCode::NotImplemented)
+}
+
+fn read_capability_header(device: &Device, addr: u8) -> CapabilityHeader {
+    CapabilityHeader {
+        data: read_conf_reg_from_device(device, addr),
+    }
+}
+
+fn configure_msi(
+    device: &Device,
+    msg_addr: u32,
+    msg_data: u32,
+    num_vector_exponent: usize,
+) -> Result<(), PciError> {
+    let mut cap_addr =
+        (read_conf_reg_from_device(device, 0x34) & 0x000000ff) as u8;
+    let mut msi_cap_addr = 0;
+    let mut msix_cap_addr = 0;
+
+    while cap_addr != 0 {
+        let header = read_capability_header(device, cap_addr);
+        unsafe {
+            if header.fields.cap_id == CAPABILITY_MSI {
+                msi_cap_addr = cap_addr;
+            } else if header.fields.cap_id == CAPABILITY_MSIX {
+                msix_cap_addr = cap_addr;
+            }
+            cap_addr = header.fields.next_ptr;
+        }
+    }
+
+    if msi_cap_addr != 0 {
+        configure_msi_register(
+            device, msi_cap_addr, msg_addr, msg_data, num_vector_exponent)
+    } else if msix_cap_addr != 0 {
+        configure_msix_register(
+            device, msix_cap_addr, msg_addr, msg_data, num_vector_exponent)
+    } else {
+        make_error!(PciErrorCode::NoPciMsi)
+    }
+}
+
+pub fn configure_msi_fixed_destination(
+    device: &Device,
+    apic_id: u32,
+    trigger_mode: MsiTriggerMode,
+    derivery_mode: MsiDeliveryMode,
+    vector: u32,
+    num_vector_exponent: usize,
+) -> Result<(), PciError> {
+    let msg_addr = 0xfee00000 | (apic_id << 12);
+    let mut msg_data = ((derivery_mode as u32) << 8) | vector;
+    if trigger_mode == MsiTriggerMode::Level {
+        msg_data |= 0xc000;
+    }
+    configure_msi(device, msg_addr, msg_data, num_vector_exponent)
+}

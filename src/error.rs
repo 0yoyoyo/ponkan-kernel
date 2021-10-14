@@ -20,6 +20,7 @@ pub enum PciErrorCode {
     InvaludPhase,
     UnknownXhciSpeedId,
     NoWaiter,
+    NoPciMsi,
 }
 
 #[derive(Debug)]

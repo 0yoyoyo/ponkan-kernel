@@ -32,6 +32,12 @@ extern "C" {
         return (uint32_t)err.Cause();
     }
 
+    xhci::EventRing *XHCI_Controller_PrimaryEventRing(
+        xhci::Controller *controller
+    ) {
+        return controller->PrimaryEventRing();
+    }
+
     xhci::Port *XHCI_Controller_PortAt(
         xhci::Controller *controller,
         uint8_t port_num
@@ -41,6 +47,10 @@ extern "C" {
 
     uint8_t XHCI_Controller_MaxPorts(xhci::Controller *controller) {
         return controller->MaxPorts();
+    }
+
+    bool XHCI_EventRing_HasFront(xhci::EventRing *event_ring) {
+        return event_ring->HasFront();
     }
 
     bool XHCI_Port_IsConnected(xhci::Port *port) {

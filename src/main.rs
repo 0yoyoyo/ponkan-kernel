@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(asm)]
 #![feature(global_asm)]
+#![feature(abi_x86_interrupt)]
 
 mod panic;
 mod graphics;
@@ -15,6 +16,7 @@ mod logger;
 mod error;
 mod usb;
 mod mouse;
+mod interrupt;
 
 use graphics::{
     PixelColor, PixelWriter, Vector2D, Displacement,
@@ -29,7 +31,8 @@ use console::Console;
 use pci::{
     BusScanner, Device, read_bar, read_class_code,
     read_conf_reg_from_device, write_conf_reg_from_device,
-    read_vendor_id, read_vendor_id_from_device
+    read_vendor_id, read_vendor_id_from_device,
+    configure_msi_fixed_destination, MsiDeliveryMode, MsiTriggerMode,
 };
 use logger::*;
 use usb::{
@@ -37,8 +40,16 @@ use usb::{
     set_default_mouse_observer,
 };
 use mouse::MouseCursor;
+use interrupt::{
+    InterruptVector, InterruptDescriptor, ExceptionStackFrame, DescriptorType,
+    notify_end_of_interrupt, get_cs, load_idt, make_id_attr, set_idt_entry,
+    IDT,
+};
 
-use core::{cell::RefCell, fmt::Write, mem::MaybeUninit};
+use core::{
+    cell::RefCell, fmt::Write, mem::MaybeUninit, mem::size_of,
+    ptr::read_volatile
+};
 
 static mut BUF_RGB: MaybeUninit<RGBResv8BitPerColorPixelWriter> =
     MaybeUninit::uninit();
@@ -48,6 +59,7 @@ static mut BUF_WRITER: MaybeUninit<RefCell<&mut dyn PixelWriter>> =
     MaybeUninit::uninit();
 pub static mut BUF_CONSOLE: MaybeUninit<Console> = MaybeUninit::uninit();
 static mut BUF_MOUSE: MaybeUninit<MouseCursor> = MaybeUninit::uninit();
+static mut BUF_XHC: MaybeUninit<XhciController> = MaybeUninit::uninit();
 
 macro_rules! _kprint {
     ($w:ident, $($arg:tt)*) => ({
@@ -102,6 +114,22 @@ impl BusScanner {
         write_conf_reg_from_device(xhc_device, 0xd0, ehci_to_xhci_port);
         log!(Debug, "switch_ehci_to_xhci: SS = {:02x}, xHCI = {:02x}",
              superspeed_port, ehci_to_xhci_port);
+    }
+}
+
+extern "x86-interrupt" fn interrupt_handler_xhci(
+    _stack_frame: ExceptionStackFrame,
+) {
+    let mut xhc = unsafe {
+        BUF_XHC.assume_init_mut()
+    };
+    while xhc.primary_event_ring().has_front() {
+        if process_event(&mut xhc) != 0 {
+            log!(Error, "Error while process_event");
+        }
+    }
+    unsafe {
+        notify_end_of_interrupt();
     }
 }
 
@@ -215,12 +243,41 @@ pub extern "C" fn kernel_main(
         log!(Info, "xHC has been found: {}.{}.{}",
             device.bus, device.device, device.function);
 
+        unsafe {
+            let cs = get_cs();
+            let attr = make_id_attr(DescriptorType::InterruptGate, 0);
+            set_idt_entry(
+                &mut IDT[InterruptVector::Xhci as usize],
+                attr,
+                interrupt_handler_xhci as usize as u64,
+                cs,
+            );
+            load_idt(
+                (size_of::<InterruptDescriptor>() * IDT.len() - 1) as u16,
+                &IDT as *const _ as u64,
+            );
+
+            let bsp_local_apic_id =
+                (read_volatile(0xfee00020 as *const u32) >> 24) & 0x000000ff;
+            configure_msi_fixed_destination(
+                device,
+                bsp_local_apic_id,
+                MsiTriggerMode::Level,
+                MsiDeliveryMode::Fixed,
+                InterruptVector::Xhci as u32,
+                0,
+            ).unwrap();
+        }
+
         match read_bar(device, 0) {
             Ok(bar) => {
                 let xhc_mmio_base = bar & !0xf;
                 log!(Debug, "xHC mmio_base = {:08x}", xhc_mmio_base);
 
-                let mut xhc = XhciController::new(xhc_mmio_base);
+                let mut xhc = unsafe {
+                    BUF_XHC.write(XhciController::new(xhc_mmio_base));
+                    BUF_XHC.assume_init_mut()
+                };
 
                 if read_vendor_id_from_device(device) == 0x8086 {
                     scanner.switch_ehci_to_xhci(device);
@@ -231,6 +288,10 @@ pub extern "C" fn kernel_main(
 
                 log!(Info, "xHC starting");
                 xhc.run();
+
+                unsafe {
+                    asm!("sti");
+                }
 
                 set_default_mouse_observer(mouse_observer);
 
@@ -243,12 +304,6 @@ pub extern "C" fn kernel_main(
                         configure_port(&mut xhc, &mut port) != 0 {
                         log!(Error, "Failed to configure port");
                         continue;
-                    }
-                }
-
-                loop {
-                    if process_event(&mut xhc) != 0 {
-                        log!(Error, "Error while process_event");
                     }
                 }
             },

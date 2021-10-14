@@ -7,12 +7,14 @@ extern "C" {
     fn XHCI_Controller_Delete(controller: FFIPointer);
     fn XHCI_Controller_Initialize(controller: FFIPointer) -> FFIErrorCode;
     fn XHCI_Controller_Run(controller: FFIPointer) -> FFIErrorCode;
+    fn XHCI_Controller_PrimaryEventRing(controller: FFIPointer)-> FFIPointer;
     fn XHCI_Controller_PortAt(
         controller: FFIPointer,
         port_num: u8
     )-> FFIPointer;
     fn XHCI_Controller_MaxPorts(controller: FFIPointer) -> u8;
     fn XHCI_Port_IsConnected(port: FFIPointer) -> bool;
+    fn XHCI_EventRing_HasFront(event_ring: FFIPointer) -> bool;
     fn XHCI_ConfigurePort(
         controller: FFIPointer,
         port: FFIPointer
@@ -24,6 +26,7 @@ extern "C" {
 }
 
 pub struct XhciController(FFIPointer);
+pub struct XhciEventRing(FFIPointer);
 pub struct XhciPort(FFIPointer);
 
 impl XhciController {
@@ -45,6 +48,12 @@ impl XhciController {
         }
     }
 
+    pub fn primary_event_ring(&mut self) -> XhciEventRing {
+        unsafe {
+            XhciEventRing(XHCI_Controller_PrimaryEventRing(self.0))
+        }
+    }
+
     pub fn port_at(&mut self, port_num: u8) -> XhciPort {
         unsafe {
             XhciPort(XHCI_Controller_PortAt(self.0, port_num))
@@ -62,6 +71,14 @@ impl Drop for XhciController {
     fn drop(&mut self) {
         unsafe {
             XHCI_Controller_Delete(self.0)
+        }
+    }
+}
+
+impl XhciEventRing {
+    pub fn has_front(&mut self) -> bool {
+        unsafe {
+            XHCI_EventRing_HasFront(self.0)
         }
     }
 }
