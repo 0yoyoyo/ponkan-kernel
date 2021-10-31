@@ -17,6 +17,7 @@ mod error;
 mod usb;
 mod mouse;
 mod interrupt;
+mod queue;
 
 use graphics::{
     PixelColor, PixelWriter, Vector2D, Displacement,
@@ -45,11 +46,24 @@ use interrupt::{
     notify_end_of_interrupt, get_cs, load_idt, make_id_attr, set_idt_entry,
     IDT,
 };
+use queue::ArrayQueue;
 
 use core::{
     cell::RefCell, fmt::Write, mem::MaybeUninit, mem::size_of,
     ptr::read_volatile
 };
+
+#[derive(Clone, Copy, Debug)]
+enum MassageType {
+    InterruptXhci,
+}
+
+#[derive(Clone, Copy)]
+struct Message {
+    m_type: Option<MassageType>,
+}
+
+static mut MAIN_QUEUE_DATA: [Message; 32] =[Message { m_type: None }; 32];
 
 static mut BUF_RGB: MaybeUninit<RGBResv8BitPerColorPixelWriter> =
     MaybeUninit::uninit();
@@ -60,6 +74,8 @@ static mut BUF_WRITER: MaybeUninit<RefCell<&mut dyn PixelWriter>> =
 pub static mut BUF_CONSOLE: MaybeUninit<Console> = MaybeUninit::uninit();
 static mut BUF_MOUSE: MaybeUninit<MouseCursor> = MaybeUninit::uninit();
 static mut BUF_XHC: MaybeUninit<XhciController> = MaybeUninit::uninit();
+static mut BUF_QUEUE: MaybeUninit<ArrayQueue<Message, 32>> =
+    MaybeUninit::uninit();
 
 macro_rules! _kprint {
     ($w:ident, $($arg:tt)*) => ({
@@ -120,14 +136,12 @@ impl BusScanner {
 extern "x86-interrupt" fn interrupt_handler_xhci(
     _stack_frame: ExceptionStackFrame,
 ) {
-    let xhc = unsafe {
-        BUF_XHC.assume_init_mut()
+    let main_queue = unsafe {
+        BUF_QUEUE.assume_init_mut()
     };
-    while xhc.primary_event_ring().has_front() {
-        if process_event(xhc) != 0 {
-            log!(Error, "Error while process_event");
-        }
-    }
+    main_queue
+        .push(Message { m_type: Some(MassageType::InterruptXhci) })
+        .unwrap();
     unsafe {
         notify_end_of_interrupt();
     }
@@ -206,6 +220,10 @@ pub extern "C" fn kernel_main(
         BUF_MOUSE.write(
             MouseCursor::new(pixel_writer, desktop_bg_color, initial_position)
         );
+    }
+
+    unsafe {
+        BUF_QUEUE.write(ArrayQueue::new(&mut MAIN_QUEUE_DATA));
     }
 
     let mut scanner = BusScanner::new();
@@ -289,10 +307,6 @@ pub extern "C" fn kernel_main(
                 log!(Info, "xHC starting");
                 xhc.run();
 
-                unsafe {
-                    asm!("sti");
-                }
-
                 set_default_mouse_observer(mouse_observer);
 
                 for i in 0..xhc.max_ports() {
@@ -304,6 +318,41 @@ pub extern "C" fn kernel_main(
                         configure_port(xhc, &mut port) != 0 {
                         log!(Error, "Failed to configure port");
                         continue;
+                    }
+                }
+
+                let main_queue = unsafe {
+                    BUF_QUEUE.assume_init_mut()
+                };
+                loop {
+                    unsafe {
+                        asm!("cli");
+                    }
+                    if main_queue.count() == 0 {
+                        unsafe {
+                            asm!("sti", "hlt");
+                        }
+                        continue;
+                    }
+
+                    let message = main_queue.pop().unwrap();
+                    unsafe {
+                        asm!("sti");
+                    }
+
+                    #[allow(unreachable_patterns)]
+                    match message.m_type.unwrap() {
+                        MassageType::InterruptXhci => {
+                            let xhc = unsafe {
+                                BUF_XHC.assume_init_mut()
+                            };
+                            while xhc.primary_event_ring().has_front() {
+                                if process_event(xhc) != 0 {
+                                    log!(Error, "Error while process_event");
+                                }
+                            }
+                        },
+                        _ => log!(Error, "Unknown message type: {:?}", message.m_type),
                     }
                 }
             },
