@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 #[repr(u8)]
 #[allow(non_camel_case_types)]
 pub enum PixelFormat {
@@ -5,6 +6,7 @@ pub enum PixelFormat {
     kPixelBGRResv8BitPerColor,
 }
 
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct FrameBufferConfig {
     pub frame_buffer: *mut u8,

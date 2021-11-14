@@ -18,6 +18,10 @@ mod usb;
 mod mouse;
 mod interrupt;
 mod queue;
+mod memory_map;
+mod segment;
+mod x86_descriptor;
+mod paging;
 
 use graphics::{
     PixelColor, PixelWriter, Vector2D, Displacement,
@@ -42,16 +46,25 @@ use usb::{
 };
 use mouse::MouseCursor;
 use interrupt::{
-    InterruptVector, InterruptDescriptor, ExceptionStackFrame, DescriptorType,
+    InterruptVector, InterruptDescriptor, ExceptionStackFrame,
     notify_end_of_interrupt, get_cs, load_idt, make_id_attr, set_idt_entry,
     IDT,
 };
 use queue::ArrayQueue;
+use memory_map::{MemoryMap, is_available};
+use x86_descriptor::DescriptorType;
+use segment::setup_segments;
+use paging::setup_identity_page_table;
 
 use core::{
-    cell::RefCell, fmt::Write, mem::MaybeUninit, mem::size_of,
-    ptr::read_volatile
+    cell::RefCell, convert::TryInto, fmt::Write, mem::MaybeUninit,
+    mem::size_of, ptr::read_volatile,
 };
+
+extern "C" {
+    fn set_ds_all(value: u16);
+    fn set_cs_ss(cs: u16, ss: u16);
+}
 
 #[derive(Clone, Copy, Debug)]
 enum MassageType {
@@ -76,6 +89,8 @@ static mut BUF_MOUSE: MaybeUninit<MouseCursor> = MaybeUninit::uninit();
 static mut BUF_XHC: MaybeUninit<XhciController> = MaybeUninit::uninit();
 static mut BUF_QUEUE: MaybeUninit<ArrayQueue<Message, 32>> =
     MaybeUninit::uninit();
+static mut BUF_FBCONFIG: MaybeUninit<FrameBufferConfig> = MaybeUninit::uninit();
+static mut BUF_MEMMAP: MaybeUninit<MemoryMap> = MaybeUninit::uninit();
 
 macro_rules! _kprint {
     ($w:ident, $($arg:tt)*) => ({
@@ -147,10 +162,26 @@ extern "x86-interrupt" fn interrupt_handler_xhci(
     }
 }
 
+#[repr(align(16))]
+pub struct KernelMainStack([u8; 1024 * 1024]);
+
 #[no_mangle]
-pub extern "C" fn kernel_main(
-    frame_buffer_config: &'static mut FrameBufferConfig,
+pub static mut KERNEL_MAIN_STACK: KernelMainStack =
+    KernelMainStack([0; 1024 * 1024]);
+
+#[no_mangle]
+pub extern "C" fn kernel_main_new_stack(
+    frame_buffer_config_ref: &'static mut FrameBufferConfig,
+    memory_map_ref: &'static MemoryMap,
 ) -> ! {
+    let frame_buffer_config = unsafe {
+        BUF_FBCONFIG.write(*frame_buffer_config_ref);
+        BUF_FBCONFIG.assume_init_mut()
+    };
+    let memory_map = unsafe {
+        BUF_MEMMAP.write(*memory_map_ref)
+    };
+
     let frame_width = frame_buffer_config.horisontal_resolution as usize;
     let frame_height = frame_buffer_config.vertical_resolution as usize;
 
@@ -211,6 +242,30 @@ pub extern "C" fn kernel_main(
     }
     kprintln!("Welcome to PonkanOS!");
     set_log_level(Warn);
+
+    setup_segments();
+
+    unsafe {
+        let kernel_cs = 1 << 3;
+        let kernel_ss = 2 << 3;
+        set_ds_all(0);
+        set_cs_ss(kernel_cs, kernel_ss);
+    }
+
+    setup_identity_page_table();
+
+    kprintln!("memory_map: 0x{:016x}", memory_map as *const _ as usize);
+    for desc in memory_map.iter() {
+        if is_available(desc.memory_type.try_into().unwrap()) {
+            kprintln!("type = {}, phys = 0x{:08x} - 0x{:08x}, pages = {}, attr = 0x{:08x}",
+                desc.memory_type,
+                desc.physical_start,
+                desc.physical_start + desc.number_of_pages as usize * 4096 - 1,
+                desc.number_of_pages,
+                desc.attribute,
+            );
+        }
+    }
 
     let initial_position = Vector2D {
         x: 300,

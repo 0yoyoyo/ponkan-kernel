@@ -1,3 +1,5 @@
+use crate::x86_descriptor::DescriptorType;
+
 use core::ptr::write_volatile;
 
 extern "C" {
@@ -16,17 +18,6 @@ pub static mut IDT: [InterruptDescriptor; 256] = {
     };
     [empty_interrupt_descriptor; 256]
 };
-
-#[allow(dead_code)]
-pub enum DescriptorType {
-    Upper8Bytes   = 0,
-    Ldt           = 2,
-    TssAvailable  = 9,
-    TssBusy       = 11,
-    CallGate      = 12,
-    InterruptGate = 14,
-    TrapGate      = 15,
-}
 
 pub enum InterruptVector {
     Xhci = 0x40,
