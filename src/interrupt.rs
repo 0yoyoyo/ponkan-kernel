@@ -1,4 +1,4 @@
-use crate::x86_descriptor::DescriptorType;
+use crate::x86_descriptor::GateDescriptorType;
 
 use core::ptr::write_volatile;
 
@@ -37,14 +37,14 @@ pub struct InterruptDescriptor  {
 }
 
 pub const fn make_id_attr(
-    ty: DescriptorType,
+    ty: GateDescriptorType,
     descriptor_privilege_level: u16,
 ) -> InterruptDescriptorAttribute {
     make_id_attr_internal(ty, descriptor_privilege_level, true, 0)
 }
 
 const fn make_id_attr_internal(
-    ty: DescriptorType,
+    ty: GateDescriptorType,
     descriptor_privilege_level: u16,
     present: bool,
     interrupt_stack_table: u16,

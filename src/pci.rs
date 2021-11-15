@@ -438,6 +438,7 @@ fn configure_msi_register(
     unsafe {
         let multi_msg_capable =
             (msi_cap.header.fields.others >> 1) & 0b0000_0000_0000_0111;
+        msi_cap.header.fields.others &= 0b1111_1111_1000_1111;
         if (multi_msg_capable as usize) <= num_vector_exponent {
             msi_cap.header.fields.others |=
                 (multi_msg_capable << 4) & 0b0000_0000_0111_0000;

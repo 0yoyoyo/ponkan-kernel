@@ -1,5 +1,5 @@
 #[allow(dead_code)]
-pub enum DescriptorType {
+pub enum GateDescriptorType {
     Upper8Bytes   = 0,
     Ldt           = 2,
     TssAvailable  = 9,

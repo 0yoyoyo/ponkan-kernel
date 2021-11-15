@@ -34,10 +34,10 @@ use frame_buffer_config::{
 pub use write_buffer::WriteBuffer;
 use console::Console;
 use pci::{
-    BusScanner, Device, read_bar, read_class_code,
-    read_conf_reg_from_device, write_conf_reg_from_device,
-    read_vendor_id, read_vendor_id_from_device,
-    configure_msi_fixed_destination, MsiDeliveryMode, MsiTriggerMode,
+    BusScanner, Device, MsiDeliveryMode, MsiTriggerMode,
+    read_bar, read_class_code, read_vendor_id, read_conf_reg_from_device,
+    write_conf_reg_from_device, read_vendor_id_from_device,
+    configure_msi_fixed_destination,
 };
 use logger::*;
 use usb::{
@@ -46,19 +46,19 @@ use usb::{
 };
 use mouse::MouseCursor;
 use interrupt::{
-    InterruptVector, InterruptDescriptor, ExceptionStackFrame,
+    InterruptVector, ExceptionStackFrame,
     notify_end_of_interrupt, get_cs, load_idt, make_id_attr, set_idt_entry,
     IDT,
 };
 use queue::ArrayQueue;
 use memory_map::{MemoryMap, is_available};
-use x86_descriptor::DescriptorType;
+use x86_descriptor::GateDescriptorType;
 use segment::setup_segments;
 use paging::setup_identity_page_table;
 
 use core::{
-    cell::RefCell, convert::TryInto, fmt::Write, mem::MaybeUninit,
-    mem::size_of, ptr::read_volatile,
+    cell::RefCell, convert::TryInto, fmt::Write, mem::size_of_val,
+    mem::MaybeUninit, ptr::read_volatile
 };
 
 extern "C" {
@@ -175,8 +175,7 @@ pub extern "C" fn kernel_main_new_stack(
     memory_map_ref: &'static MemoryMap,
 ) -> ! {
     let frame_buffer_config = unsafe {
-        BUF_FBCONFIG.write(*frame_buffer_config_ref);
-        BUF_FBCONFIG.assume_init_mut()
+        BUF_FBCONFIG.write(*frame_buffer_config_ref)
     };
     let memory_map = unsafe {
         BUF_MEMMAP.write(*memory_map_ref)
@@ -190,22 +189,17 @@ pub extern "C" fn kernel_main_new_stack(
     {
         PixelFormat::kPixelRGBResv8BitPerColor => {
             unsafe {
-                BUF_RGB.write(
-                    RGBResv8BitPerColorPixelWriter(frame_buffer_config));
-                BUF_RGB.assume_init_mut()
+                BUF_RGB.write(RGBResv8BitPerColorPixelWriter(frame_buffer_config))
             }
         },
         PixelFormat::kPixelBGRResv8BitPerColor => {
             unsafe {
-                BUF_BGR.write(
-                    BGRResv8BitPerColorPixelWriter(frame_buffer_config));
-                BUF_BGR.assume_init_mut()
+                BUF_BGR.write(BGRResv8BitPerColorPixelWriter(frame_buffer_config))
             }
         },
     };
     let pixel_writer = unsafe {
-        BUF_WRITER.write(RefCell::new(pixel_writer));
-        BUF_WRITER.assume_init_ref()
+        BUF_WRITER.write(RefCell::new(pixel_writer))
     };
 
     let desktop_bg_color = PixelColor { r: 45, g: 115, b: 200 };
@@ -318,17 +312,14 @@ pub extern "C" fn kernel_main_new_stack(
 
         unsafe {
             let cs = get_cs();
-            let attr = make_id_attr(DescriptorType::InterruptGate, 0);
+            let attr = make_id_attr(GateDescriptorType::InterruptGate, 0);
             set_idt_entry(
                 &mut IDT[InterruptVector::Xhci as usize],
                 attr,
                 interrupt_handler_xhci as usize as u64,
                 cs,
             );
-            load_idt(
-                (size_of::<InterruptDescriptor>() * IDT.len() - 1) as u16,
-                &IDT as *const _ as u64,
-            );
+            load_idt((size_of_val(&IDT) - 1) as u16, &IDT as *const _ as u64);
 
             let bsp_local_apic_id =
                 (read_volatile(0xfee00020 as *const u32) >> 24) & 0x000000ff;
@@ -348,8 +339,7 @@ pub extern "C" fn kernel_main_new_stack(
                 log!(Debug, "xHC mmio_base = {:08x}", xhc_mmio_base);
 
                 let xhc = unsafe {
-                    BUF_XHC.write(XhciController::new(xhc_mmio_base));
-                    BUF_XHC.assume_init_mut()
+                    BUF_XHC.write(XhciController::new(xhc_mmio_base))
                 };
 
                 if read_vendor_id_from_device(device) == 0x8086 {
@@ -407,7 +397,11 @@ pub extern "C" fn kernel_main_new_stack(
                                 }
                             }
                         },
-                        _ => log!(Error, "Unknown message type: {:?}", message.m_type),
+                        _ => log!(
+                            Error,
+                            "Unknown message type: {:?}",
+                            message.m_type,
+                        ),
                     }
                 }
             },
