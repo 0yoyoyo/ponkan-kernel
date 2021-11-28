@@ -22,6 +22,7 @@ mod memory_map;
 mod segment;
 mod x86_descriptor;
 mod paging;
+mod memory_manager;
 
 use graphics::{
     PixelColor, PixelWriter, Vector2D, Displacement,
@@ -51,10 +52,11 @@ use interrupt::{
     IDT,
 };
 use queue::ArrayQueue;
-use memory_map::{MemoryMap, is_available};
+use memory_map::{MemoryMap, is_available, UEFI_PAGE_SIZE};
 use x86_descriptor::GateDescriptorType;
 use segment::setup_segments;
 use paging::setup_identity_page_table;
+use memory_manager::{BitmapMemoryManager, FrameId, BYTE_PER_FRAME};
 
 use core::{
     cell::RefCell, convert::TryInto, fmt::Write, mem::size_of_val,
@@ -91,6 +93,7 @@ static mut BUF_QUEUE: MaybeUninit<ArrayQueue<Message, 32>> =
     MaybeUninit::uninit();
 static mut BUF_FBCONFIG: MaybeUninit<FrameBufferConfig> = MaybeUninit::uninit();
 static mut BUF_MEMMAP: MaybeUninit<MemoryMap> = MaybeUninit::uninit();
+static mut BUF_MEMMNG: MaybeUninit<BitmapMemoryManager> = MaybeUninit::uninit();
 
 macro_rules! _kprint {
     ($w:ident, $($arg:tt)*) => ({
@@ -248,18 +251,34 @@ pub extern "C" fn kernel_main_new_stack(
 
     setup_identity_page_table();
 
-    kprintln!("memory_map: 0x{:016x}", memory_map as *const _ as usize);
+    let memory_manager = unsafe {
+        BUF_MEMMNG.write(BitmapMemoryManager::new())
+    };
+    let mut available_end = 0;
     for desc in memory_map.iter() {
+        if available_end < desc.physical_start {
+            memory_manager.mark_allocated(
+                FrameId::new(available_end / BYTE_PER_FRAME),
+                (desc.physical_start - available_end) / BYTE_PER_FRAME,
+            );
+        }
+
+        let physical_end =
+            desc.physical_start + desc.number_of_pages as usize * UEFI_PAGE_SIZE;
         if is_available(desc.memory_type.try_into().unwrap()) {
-            kprintln!("type = {}, phys = 0x{:08x} - 0x{:08x}, pages = {}, attr = 0x{:08x}",
-                desc.memory_type,
-                desc.physical_start,
-                desc.physical_start + desc.number_of_pages as usize * 4096 - 1,
-                desc.number_of_pages,
-                desc.attribute,
+            available_end = physical_end;
+        } else {
+            memory_manager.mark_allocated(
+                FrameId::new(desc.physical_start / BYTE_PER_FRAME),
+                desc.number_of_pages as usize * UEFI_PAGE_SIZE / BYTE_PER_FRAME,
             );
         }
     }
+
+    memory_manager.set_memory_range(
+        FrameId::new(1),
+        FrameId::new(available_end / BYTE_PER_FRAME),
+    );
 
     let initial_position = Vector2D {
         x: 300,

@@ -88,3 +88,5 @@ pub fn is_available(memory_type: EfiMemoryType) -> bool {
     memory_type == EfiMemoryType::BootServicesCode ||
     memory_type == EfiMemoryType::ConventionalMemory
 }
+
+pub const UEFI_PAGE_SIZE: usize = 4096;
