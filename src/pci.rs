@@ -101,9 +101,9 @@ const fn calc_bar_address(bar_index: usize) -> u8 {
     0x10 + 4 * (bar_index as u8)
 }
 
-pub fn read_bar(device: &Device, bar_index: usize) -> Result<u64, PciError> {
+pub fn read_bar(device: &Device, bar_index: usize) -> Result<u64, OsError> {
     if bar_index >= 6 {
-        return make_error!(PciErrorCode::IndexOutOfRange);
+        return make_error!(OsErrorCode::IndexOutOfRange);
     }
 
     let addr = calc_bar_address(bar_index);
@@ -117,7 +117,7 @@ pub fn read_bar(device: &Device, bar_index: usize) -> Result<u64, PciError> {
 
     // 64 bit address
     if bar_index >= 5 {
-        return make_error!(PciErrorCode::IndexOutOfRange);
+        return make_error!(OsErrorCode::IndexOutOfRange);
     }
 
     let bar_upper = read_conf_reg(
@@ -197,7 +197,7 @@ impl BusScanner {
         self.num_device
     }
 
-    pub fn scan_all_bus(&mut self) -> Result<(), PciError> {
+    pub fn scan_all_bus(&mut self) -> Result<(), OsError> {
         self.num_device = 0;
 
         let header_type = read_header_type(0, 0, 0);
@@ -215,7 +215,7 @@ impl BusScanner {
         Ok(())
     }
 
-    fn scan_bus(&mut self, bus: u8) -> Result<(), PciError> {
+    fn scan_bus(&mut self, bus: u8) -> Result<(), OsError> {
         for device in 0..32 {
             if read_vendor_id(bus, device, 0) == 0xffff {
                 continue;
@@ -226,7 +226,7 @@ impl BusScanner {
         Ok(())
     }
 
-    fn scan_device(&mut self, bus: u8, device: u8) -> Result<(), PciError> {
+    fn scan_device(&mut self, bus: u8, device: u8) -> Result<(), OsError> {
         self.scan_function(bus, device, 0)?;
 
         if is_single_function_device(read_header_type(bus, device, 0)) {
@@ -248,7 +248,7 @@ impl BusScanner {
         bus: u8,
         device: u8,
         function: u8,
-    ) -> Result<(), PciError> {
+    ) -> Result<(), OsError> {
         let header_type = read_header_type(bus, device, function);
         let class_code = read_class_code(bus, device, function);
 
@@ -270,9 +270,9 @@ impl BusScanner {
         function: u8,
         header_type: u8,
         class_code: ClassCode,
-    ) -> Result<(), PciError> {
+    ) -> Result<(), OsError> {
         if self.num_device == self.devices.len() {
-            return make_error!(PciErrorCode::Full);
+            return make_error!(OsErrorCode::Full);
         }
 
         self.devices[self.num_device] = Device {
@@ -432,7 +432,7 @@ fn configure_msi_register(
     msg_addr: u32,
     msg_data: u32,
     num_vector_exponent: usize,
-) -> Result<(), PciError> {
+) -> Result<(), OsError> {
     let mut msi_cap = read_msi_capability(device, cap_addr);
 
     unsafe {
@@ -462,8 +462,8 @@ fn configure_msix_register(
     _msg_addr: u32,
     _msg_data: u32,
     _num_vector_exponent: usize,
-) -> Result<(), PciError> {
-    make_error!(PciErrorCode::NotImplemented)
+) -> Result<(), OsError> {
+    make_error!(OsErrorCode::NotImplemented)
 }
 
 fn read_capability_header(device: &Device, addr: u8) -> CapabilityHeader {
@@ -477,7 +477,7 @@ fn configure_msi(
     msg_addr: u32,
     msg_data: u32,
     num_vector_exponent: usize,
-) -> Result<(), PciError> {
+) -> Result<(), OsError> {
     let mut cap_addr =
         (read_conf_reg_from_device(device, 0x34) & 0x000000ff) as u8;
     let mut msi_cap_addr = 0;
@@ -502,7 +502,7 @@ fn configure_msi(
         configure_msix_register(
             device, msix_cap_addr, msg_addr, msg_data, num_vector_exponent)
     } else {
-        make_error!(PciErrorCode::NoPciMsi)
+        make_error!(OsErrorCode::NoPciMsi)
     }
 }
 
@@ -513,7 +513,7 @@ pub fn configure_msi_fixed_destination(
     derivery_mode: MsiDeliveryMode,
     vector: u32,
     num_vector_exponent: usize,
-) -> Result<(), PciError> {
+) -> Result<(), OsError> {
     let msg_addr = 0xfee00000 | (apic_id << 12);
     let mut msg_data = ((derivery_mode as u32) << 8) | vector;
     if trigger_mode == MsiTriggerMode::Level {

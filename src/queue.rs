@@ -19,9 +19,9 @@ impl<'a, T, const N: usize> ArrayQueue<'a, T, N> {
         }
     }
 
-    pub fn push(&mut self, value: T) -> Result<(), PciError> {
+    pub fn push(&mut self, value: T) -> Result<(), OsError> {
         if self.count == self.capacity {
-            return make_error!(PciErrorCode::Full);
+            return make_error!(OsErrorCode::Full);
         }
 
         self.data[self.write_pos] = value;
@@ -34,9 +34,9 @@ impl<'a, T, const N: usize> ArrayQueue<'a, T, N> {
         Ok(())
     }
 
-    pub fn pop(&mut self) -> Result<&T, PciError> {
+    pub fn pop(&mut self) -> Result<&T, OsError> {
         if self.count == 0 {
-            return make_error!(PciErrorCode::Empty);
+            return make_error!(OsErrorCode::Empty);
         }
 
         let value = &self.data[self.read_pos];

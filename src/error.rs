@@ -1,6 +1,6 @@
 #[derive(Debug)]
 #[allow(dead_code)]
-pub enum PciErrorCode {
+pub enum OsErrorCode {
     Full,
     Empty,
     NoEnoughMemory,
@@ -24,15 +24,15 @@ pub enum PciErrorCode {
 }
 
 #[derive(Debug)]
-pub struct PciError {
-    pub code: PciErrorCode,
+pub struct OsError {
+    pub code: OsErrorCode,
     pub file: &'static str,
     pub line: u32,
 }
 
 #[macro_export]
 macro_rules! make_error {
-    ($code:expr) => (Err(PciError {
+    ($code:expr) => (Err(OsError {
         code: $code,
         file: file!(),
         line: line!(),

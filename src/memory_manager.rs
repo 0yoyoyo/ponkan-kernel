@@ -48,13 +48,13 @@ impl BitmapMemoryManager {
     }
 
     #[allow(dead_code)]
-    pub fn allocate(&mut self, num_frames: usize) -> Result<FrameId, PciError> {
+    pub fn allocate(&mut self, num_frames: usize) -> Result<FrameId, OsError> {
         let mut start_frame_id = self.range_begin.id();
         loop {
             let mut i = 0;
             while i < num_frames {
                 if start_frame_id + i >= self.range_end.id() {
-                    return make_error!(PciErrorCode::NoEnoughMemory);
+                    return make_error!(OsErrorCode::NoEnoughMemory);
                 }
                 if self.get_bit(FrameId::new(start_frame_id + i)) {
                     break;
@@ -74,7 +74,7 @@ impl BitmapMemoryManager {
         &mut self,
         start_frame: FrameId,
         num_frames: usize
-    ) -> Result<(), PciError> {
+    ) -> Result<(), OsError> {
         for i in 0..num_frames {
             self.set_bit(FrameId::new(start_frame.id() + i), false);
         }
