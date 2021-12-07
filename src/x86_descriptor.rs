@@ -1,3 +1,4 @@
+#[repr(u16)]
 #[allow(dead_code)]
 pub enum GateDescriptorType {
     Upper8Bytes   = 0,
