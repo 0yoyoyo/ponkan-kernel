@@ -47,7 +47,6 @@ impl BitmapMemoryManager {
         }
     }
 
-    #[allow(dead_code)]
     pub fn allocate(&mut self, num_frames: usize) -> Result<FrameId, OsError> {
         let mut start_frame_id = self.range_begin.id();
         loop {
@@ -69,7 +68,6 @@ impl BitmapMemoryManager {
         }
     }
 
-    #[allow(dead_code)]
     pub fn free(
         &mut self,
         start_frame: FrameId,
@@ -96,7 +94,6 @@ impl BitmapMemoryManager {
         self.range_end = range_end;
     }
 
-    #[allow(dead_code)]
     fn get_bit(&self, frame: FrameId) -> bool {
         let line_index = frame.id() / BITS_PER_MAP_LINE;
         let bit_index = frame.id() % BITS_PER_MAP_LINE;

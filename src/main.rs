@@ -3,6 +3,7 @@
 #![feature(asm)]
 #![feature(global_asm)]
 #![feature(abi_x86_interrupt)]
+#![feature(default_alloc_error_handler)]
 
 mod panic;
 mod graphics;
@@ -23,6 +24,7 @@ mod segment;
 mod x86_descriptor;
 mod paging;
 mod memory_manager;
+mod alloc_support;
 
 use graphics::{
     PixelColor, PixelWriter, Vector2D, Displacement,
@@ -63,6 +65,10 @@ use core::{
     mem::MaybeUninit, ptr::read_volatile
 };
 
+#[allow(unused_imports)]
+#[macro_use]
+extern crate alloc;
+
 extern "C" {
     fn set_ds_all(value: u16);
     fn set_cs_ss(cs: u16, ss: u16);
@@ -93,7 +99,8 @@ static mut BUF_QUEUE: MaybeUninit<ArrayQueue<Message, 32>> =
     MaybeUninit::uninit();
 static mut BUF_FBCONFIG: MaybeUninit<FrameBufferConfig> = MaybeUninit::uninit();
 static mut BUF_MEMMAP: MaybeUninit<MemoryMap> = MaybeUninit::uninit();
-static mut BUF_MEMMNG: MaybeUninit<BitmapMemoryManager> = MaybeUninit::uninit();
+pub static mut BUF_MEMMNG: MaybeUninit<BitmapMemoryManager> =
+    MaybeUninit::uninit();
 
 macro_rules! _kprint {
     ($w:ident, $($arg:tt)*) => ({
