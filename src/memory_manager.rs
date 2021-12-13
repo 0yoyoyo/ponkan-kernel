@@ -39,6 +39,7 @@ pub struct BitmapMemoryManager {
 }
 
 impl BitmapMemoryManager {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             alloc_map: [0; FRAME_COUNT / BITS_PER_MAP_LINE],
