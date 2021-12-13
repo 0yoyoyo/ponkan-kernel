@@ -5,7 +5,7 @@ use core::mem::size_of;
 pub const BYTE_PER_FRAME: usize = 4 * 1024;
 
 pub struct FrameId {
-    pub id: usize,
+    id: usize,
 }
 
 impl FrameId {
