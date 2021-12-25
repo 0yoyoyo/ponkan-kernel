@@ -1,3 +1,5 @@
+use core::arch::global_asm;
+
 global_asm!(
     ".global io_out32",
     "io_out32:",

@@ -1,7 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(asm)]
-#![feature(global_asm)]
 #![feature(abi_x86_interrupt)]
 #![feature(default_alloc_error_handler)]
 
@@ -61,7 +59,7 @@ use paging::setup_identity_page_table;
 use memory_manager::{BitmapMemoryManager, FrameId, BYTE_PER_FRAME};
 
 use core::{
-    cell::RefCell, convert::TryInto, fmt::Write, mem::size_of_val,
+    arch::asm, cell::RefCell, convert::TryInto, fmt::Write, mem::size_of_val,
     mem::MaybeUninit, ptr::read_volatile
 };
 
